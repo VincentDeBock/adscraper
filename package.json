@@ -1,0 +1,21 @@
+{
+  "name": "adscraper",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Visual explorer for active Meta ads via the official Meta Ad Library API",
+  "scripts": {
+    "dev": "vite",
+    "dev:fn": "node scripts/dev-function-server.mjs",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "vite": "^6.0.7"
+  }
+}
