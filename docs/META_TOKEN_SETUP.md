@@ -6,13 +6,24 @@ durable one for the deployed site.
 
 ---
 
-## 0. One-time prerequisite: confirm your identity
+## 0. One-time prerequisite: confirm identity AND enroll in the API
 
-The Ad Library API requires identity confirmation on your personal Facebook
-account (this is Meta's transparency requirement, separate from the app).
+The Ad Library API ties access to a **verified individual**. You must do BOTH:
 
-1. Go to **https://www.facebook.com/ID** and complete ID confirmation.
-2. It can take a few hours to a few days for Meta to approve.
+1. **Confirm your identity:** go to **https://www.facebook.com/ID** and complete
+   ID confirmation. Can take a few hours to a few days for Meta to approve.
+2. **Enroll in the Ad Library API:** go to
+   **https://www.facebook.com/ads/library/api** and follow the steps to accept
+   the API terms / gain access.
+
+If you skip step 2, the API returns:
+`"Application does not have permission for this action" (code 10, subcode 2332002)`
+even though your token is otherwise valid.
+
+> ⚠️ **A System User token does NOT work for the Ad Library API.** Because access
+> is tied to a confirmed individual, you must use a **User token from your own
+> identity-confirmed account** (Path A below). The System User approach does not
+> apply here — ignore any earlier guidance suggesting it.
 
 > You can still deploy AdScraper and use **demo mode** while you wait — the app
 > works without a token and shows sample data.
@@ -34,32 +45,22 @@ This token dies after ~1 hour — fine for a first test, not for production.
 
 ---
 
-## Path B — Long-lived token for the deployed site (recommended)
+## Path B — Make the token last 60 days (recommended for the deployed site)
 
-A **System User token** does not expire, which is what you want for a site
-that's always on. This needs a (free) Meta Business account.
+> ❌ **Do not use a System User token.** The Ad Library API rejects it with
+> "Application does not have permission for this action" because access is tied
+> to a confirmed *individual*, not a system user. Use a **User token** (Path A)
+> and extend it.
 
-1. Go to **Business Settings**: https://business.facebook.com/settings
-2. Left sidebar → **Users → System Users** → **Add**.
-   - Name it e.g. `adscraper-bot`, role **Admin** (or Employee).
-3. Select the system user → **Add Assets** → assign your **App**.
-4. Click **Generate New Token**:
-   - Pick your app.
-   - **Token expiration: Never.**
-   - You don't need to tick any special permissions for public ad search.
-5. Copy the generated token (starts with `EAAB...`). **Save it now** — Meta
-   won't show it again.
-
-### Alternative: extend a user token to 60 days
-
-If you'd rather not set up a System User, you can extend the Path A token:
+Extend your Path A user token from ~1 hour to ~60 days:
 
 ```
 https://graph.facebook.com/v21.0/oauth/access_token?grant_type=fb_exchange_token&client_id=YOUR_APP_ID&client_secret=YOUR_APP_SECRET&fb_exchange_token=SHORT_LIVED_TOKEN
 ```
 
 (Find App ID + Secret under your app's **Settings → Basic**.) The response
-contains a ~60-day token. You'll need to refresh it every couple of months.
+contains a ~60-day token. You'll need to refresh it every couple of months —
+set a calendar reminder, or re-run this exchange.
 
 ---
 
