@@ -86,7 +86,11 @@ export async function handler(event) {
       };
     }
 
-    const ads = (data.data || []).map(normalizeAd);
+    const normalized = (data.data || []).map(normalizeAd);
+
+    // Fetch OG thumbnails from snapshot pages in parallel (best-effort, 3s timeout)
+    const ads = await enrichWithThumbnails(normalized);
+
     return { statusCode: 200, headers, body: JSON.stringify({ demo: false, query: q, ads }) };
   } catch (err) {
     return {
@@ -94,6 +98,41 @@ export async function handler(event) {
       headers,
       body: JSON.stringify({ error: `Failed to reach Meta API: ${err.message}` }),
     };
+  }
+}
+
+// Fetch the og:image from each ad's snapshot page in parallel.
+// Falls back gracefully to null if a fetch times out or fails.
+async function enrichWithThumbnails(ads) {
+  const thumbnails = await Promise.all(
+    ads.map((ad) => fetchOgImage(ad.snapshotUrl))
+  );
+  return ads.map((ad, i) => ({ ...ad, thumbnailUrl: thumbnails[i] }));
+}
+
+async function fetchOgImage(snapshotUrl) {
+  if (!snapshotUrl) return null;
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 3000);
+    const res = await fetch(snapshotUrl, {
+      signal: controller.signal,
+      headers: {
+        // Pose as a regular browser so Meta renders the full OG tags
+        "User-Agent":
+          "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+        Accept: "text/html",
+      },
+    });
+    clearTimeout(timeout);
+    if (!res.ok) return null;
+    const html = await res.text();
+    // Extract og:image content attribute
+    const match = html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)
+      || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
+    return match ? match[1] : null;
+  } catch {
+    return null;
   }
 }
 
@@ -110,7 +149,7 @@ function normalizeAd(ad) {
     stopTime: ad.ad_delivery_stop_time,
     platforms: ad.publisher_platforms || [],
     snapshotUrl: ad.ad_snapshot_url,
-    thumbnailUrl: null, // Meta does not return raw creative URLs for commercial ads
+    thumbnailUrl: null, // enriched by enrichWithThumbnails() after API call
   };
 }
 
