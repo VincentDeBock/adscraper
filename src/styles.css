@@ -313,13 +313,24 @@ body {
 
 .card-hero {
   position: relative;
-  min-height: 170px;
+  min-height: 220px;
   padding: 16px;
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
   gap: 8px;
   overflow: hidden;
+}
+
+.card-shot {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top center;
+  background: #fff;
+  z-index: 1;
 }
 
 .card-hero::after {
