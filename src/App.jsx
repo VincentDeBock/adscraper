@@ -33,7 +33,7 @@ export default function App() {
       if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
       setDemo(!!data.demo);
       setMode(data.mode);
-      if (data.mode === "ads") setAds(data.ads || []);
+      if (data.mode === "ads") setAds((data.ads || []).map((a) => ({ ...a, country: c })));
       else setAdvertisers(data.advertisers || []);
       setStatus("done");
     } catch (err) {

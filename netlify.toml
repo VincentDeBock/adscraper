@@ -3,6 +3,17 @@
   publish = "dist"
   functions = "netlify/functions"
 
+# The media function runs headless Chromium — bundle it with esbuild and keep
+# the Chromium + puppeteer packages external so their binaries ship intact.
+[functions]
+  node_bundler = "esbuild"
+  external_node_modules = [
+    "@sparticuz/chromium",
+    "puppeteer-core",
+    "puppeteer-extra",
+    "puppeteer-extra-plugin-stealth",
+  ]
+
 [dev]
   command = "npm run dev"
   targetPort = 5173

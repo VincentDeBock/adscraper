@@ -35,7 +35,16 @@
       "Bash(curl -s -o /tmp/shot.png -w 'code:%{http_code} type:%{content_type} size:%{size_download}\\\\n' https://image.thum.io/get/width/600/wait/4/__TRACKED_VAR__)",
       "Read(//tmp/**)",
       "Bash(curl -s 'https://graph.facebook.com/v21.0/ads_archive?access_token=__TRACKED_VAR__&ad_reached_countries=%5B%22BE%22%5D&search_page_ids=%5B%2215087023444%22%5D&ad_active_status=ACTIVE&limit=1&fields=id,ad_snapshot_url,ad_creative_link_captions,ad_creative_link_titles,ad_creative_link_descriptions')",
-      "Bash(git -c user.email=debockvincent@gmail.com -c 'user.name=Vincent De Bock' commit -q -m 'feat: real ad creative screenshots via thum.io + token-safe redirect *)"
+      "Bash(git -c user.email=debockvincent@gmail.com -c 'user.name=Vincent De Bock' commit -q -m 'feat: real ad creative screenshots via thum.io + token-safe redirect *)",
+      "mcp__Claude_in_Chrome__tabs_context_mcp",
+      "Bash(META_ACCESS_TOKEN=\"EAAY9SPuhlaMBRjFmZAy6cyM0ZAxSZB2uY4ZC6pRYvQo9S3ZAWBgxHrorEMbppdlx4ge7zKzZB3xkfGipx144FjzG7AgBZB9EwfXAlJ20kiBuKkvU7ZAMduqzOsTv46V9NvZBZB8OgdidxZCA3fP6WgaBTHyU0jZBKZBinAFNZCyJ9Rb7HtjNPfcKHZCl1SCnTH1g2ZA9NMafUtbLtHrpCoNPO2dYCkPytobqDYmtuci78b7eZBcP1TsW8tZBPzIV5FyoSpPxtGFSd1jWuaoBlHPq9gZB9ZCLJXKtkQZDZD\" node scripts/dev-function-server.mjs)",
+      "Bash(curl -s -o /dev/null -w \"fn:%{http_code}\\\\n\" \"http://localhost:9999/.netlify/functions/ads?q=15087023444&type=page_id&country=BE\")",
+      "Bash(curl -s -o /tmp/shotlocal.png -w \"code:%{http_code} type:%{content_type} size:%{size_download}\\\\n\" \"http://localhost:9999/.netlify/functions/shot?id=1656962778966474\")",
+      "Bash(curl -s -D - -o /dev/null -A \"Mozilla/5.0 \\(Macintosh; Intel Mac OS X 10_15_7\\) AppleWebKit/537.36 Chrome/124.0 Safari/537.36\" \"https://www.facebook.com/ads/library/?id=1677027290228680&country=FR&active_status=active&ad_type=all\")",
+      "Bash(npm install *)",
+      "Bash(timeout 60 node --input-type=module -e ' *)",
+      "Bash(grep -vE \"Debugger|DevTools|^$\")",
+      "Bash(grep -vE \"Debugger|DevTools attached|^$\")"
     ]
   }
 }
