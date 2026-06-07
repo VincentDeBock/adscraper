@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { fetchMedia } from "../lib/mediaQueue.js";
 
 const PLATFORM_LABELS = {
   facebook: "Facebook",
@@ -51,6 +52,7 @@ function useAdMedia(ad) {
     const el = ref.current;
     if (!el) return;
     let done = false;
+    const controller = new AbortController();
     const io = new IntersectionObserver(
       (entries) => {
         if (entries[0].isIntersecting && !done) {
@@ -58,19 +60,23 @@ function useAdMedia(ad) {
           io.disconnect();
           setState({ status: "loading", media: null });
           const params = new URLSearchParams({ id: ad.id, country: ad.country || "ALL" });
-          fetch(`/.netlify/functions/media?${params}`)
-            .then((r) => (r.ok ? r.json() : null))
+          fetchMedia(`/.netlify/functions/media?${params}`, controller.signal)
             .then((m) => {
               if (m && (m.video || m.image || m.poster)) setState({ status: "done", media: m });
               else setState({ status: "failed", media: null });
             })
-            .catch(() => setState({ status: "failed", media: null }));
+            .catch((e) => {
+              if (e.name !== "AbortError") setState({ status: "failed", media: null });
+            });
         }
       },
-      { rootMargin: "300px" }
+      { rootMargin: "150px" }
     );
     io.observe(el);
-    return () => io.disconnect();
+    return () => {
+      io.disconnect();
+      controller.abort();
+    };
   }, [ad.id, ad.country]);
 
   return { ref, ...state };
