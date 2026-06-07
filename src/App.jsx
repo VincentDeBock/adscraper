@@ -1,43 +1,63 @@
 import { useState, useCallback } from "react";
 import { AdCard } from "./components/AdCard.jsx";
+import { AdvertiserPicker } from "./components/AdvertiserPicker.jsx";
 import { SearchBar } from "./components/SearchBar.jsx";
 
 const FUNCTION_URL = "/.netlify/functions/ads";
 
 export default function App() {
-  const [ads, setAds] = useState([]);
   const [status, setStatus] = useState("idle"); // idle | loading | done | error
   const [error, setError] = useState(null);
-  const [meta, setMeta] = useState(null); // { demo, query, country }
-  const [lastQuery, setLastQuery] = useState(null);
+  const [demo, setDemo] = useState(false);
 
-  const search = useCallback(async ({ query, searchType, country }) => {
-    if (!query.trim()) return;
+  // Result can be a list of advertisers (name search) or a list of ads (page search).
+  const [mode, setMode] = useState(null); // "advertisers" | "ads"
+  const [advertisers, setAdvertisers] = useState([]);
+  const [ads, setAds] = useState([]);
+
+  const [lastQuery, setLastQuery] = useState(null); // { label, country }
+  const [country, setCountry] = useState("ALL_EU");
+
+  const run = useCallback(async ({ q, type, country: c, label }) => {
     setStatus("loading");
     setError(null);
+    setAdvertisers([]);
     setAds([]);
-    setLastQuery({ query, searchType, country });
+    setCountry(c);
+    setLastQuery({ label: label || q, country: c });
 
-    const params = new URLSearchParams({
-      q: query.trim(),
-      type: searchType, // "name" | "page_id"
-      country,
-    });
-
+    const params = new URLSearchParams({ q, type, country: c });
     try {
       const res = await fetch(`${FUNCTION_URL}?${params.toString()}`);
       const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || `Request failed (${res.status})`);
-      }
-      setAds(data.ads || []);
-      setMeta({ demo: data.demo, query, country });
+      if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+      setDemo(!!data.demo);
+      setMode(data.mode);
+      if (data.mode === "ads") setAds(data.ads || []);
+      else setAdvertisers(data.advertisers || []);
       setStatus("done");
     } catch (err) {
       setError(err.message);
       setStatus("error");
     }
   }, []);
+
+  // From the search bar.
+  const search = useCallback(
+    ({ query, searchType, country: c }) => {
+      if (!query.trim()) return;
+      run({ q: query.trim(), type: searchType, country: c });
+    },
+    [run]
+  );
+
+  // From clicking an advertiser in the picker.
+  const selectAdvertiser = useCallback(
+    (advertiser) => {
+      run({ q: advertiser.pageId, type: "page_id", country, label: advertiser.pageName });
+    },
+    [run, country]
+  );
 
   return (
     <div className="app">
@@ -48,19 +68,19 @@ export default function App() {
             <h1>AdScraper</h1>
           </div>
           <p className="tagline">
-            See the active Meta ads any company is running right now. Search by
-            company name or Meta Page ID.
+            See the active Meta ads any company is running right now. Search a
+            brand, pick the advertiser, and view only their ads.
           </p>
           <SearchBar onSearch={search} loading={status === "loading"} />
         </div>
       </header>
 
       <main className="results">
-        {meta?.demo && (
+        {demo && (
           <div className="banner banner-demo">
             <strong>Demo mode.</strong> Showing sample data because no Meta API
-            token is configured yet. Add <code>META_ACCESS_TOKEN</code> in
-            Netlify to see live ads.
+            token is configured. Add <code>META_ACCESS_TOKEN</code> in Netlify to
+            see live ads.
           </div>
         )}
 
@@ -68,7 +88,7 @@ export default function App() {
           <EmptyState
             icon="🔍"
             title="Search for an advertiser"
-            text="Try a brand name like “Nike”, or paste a Meta Page ID for exact results."
+            text="Type a brand name like “Nike”, then pick the official advertiser to see only their ads."
           />
         )}
 
@@ -81,36 +101,44 @@ export default function App() {
         )}
 
         {status === "error" && (
-          <EmptyState
-            icon="⚠️"
-            title="Something went wrong"
-            text={error}
-            tone="error"
+          <EmptyState icon="⚠️" title="Something went wrong" text={error} tone="error" />
+        )}
+
+        {status === "done" && mode === "advertisers" && (
+          <AdvertiserPicker
+            advertisers={advertisers}
+            query={lastQuery?.label}
+            onSelect={selectAdvertiser}
           />
         )}
 
-        {status === "done" && ads.length === 0 && (
-          <EmptyState
-            icon="🫥"
-            title="No active ads found"
-            text={`No active ads for “${lastQuery?.query}” in the selected region. Try a different name, region, or the exact Page ID.`}
-          />
-        )}
-
-        {status === "done" && ads.length > 0 && (
+        {status === "done" && mode === "ads" && (
           <>
             <div className="results-meta">
-              <span>
-                <strong>{ads.length}</strong> active ad
-                {ads.length === 1 ? "" : "s"} for{" "}
-                <strong>“{meta.query}”</strong>
-              </span>
+              {ads.length > 0 ? (
+                <span>
+                  <strong>{ads.length}</strong> active ad{ads.length === 1 ? "" : "s"} from{" "}
+                  <strong>{ads[0]?.pageName || lastQuery?.label}</strong>
+                </span>
+              ) : (
+                <span>
+                  No active ads from <strong>{lastQuery?.label}</strong> in this region.
+                </span>
+              )}
             </div>
-            <div className="grid">
-              {ads.map((ad) => (
-                <AdCard key={ad.id} ad={ad} />
-              ))}
-            </div>
+            {ads.length === 0 ? (
+              <EmptyState
+                icon="🫥"
+                title="No active ads found"
+                text="This advertiser has no active ads in the selected region right now. Try another region."
+              />
+            ) : (
+              <div className="grid">
+                {ads.map((ad) => (
+                  <AdCard key={ad.id} ad={ad} />
+                ))}
+              </div>
+            )}
           </>
         )}
       </main>
@@ -118,11 +146,7 @@ export default function App() {
       <footer className="footer">
         <p>
           Data via the official{" "}
-          <a
-            href="https://www.facebook.com/ads/library/api/"
-            target="_blank"
-            rel="noreferrer"
-          >
+          <a href="https://www.facebook.com/ads/library/api/" target="_blank" rel="noreferrer">
             Meta Ad Library API
           </a>
           . Coverage and fields are limited by Meta's transparency rules.

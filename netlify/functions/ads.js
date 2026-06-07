@@ -2,8 +2,14 @@
 // The access token never reaches the browser — it lives only in this function's
 // environment (set META_ACCESS_TOKEN in the Netlify dashboard).
 //
-// If no token is configured, the function returns realistic demo data so the
-// app is fully usable/deployable before Meta API approval comes through.
+// Two modes:
+//   type=name    -> discover advertiser Pages matching the name (returns a
+//                   picker list, so the user can choose the real brand and avoid
+//                   ads from unrelated advertisers that merely mention the name)
+//   type=page_id -> return the ACTIVE ads published by that exact Page, with
+//                   creative thumbnails extracted from each ad's snapshot.
+//
+// If no token is configured, the function returns realistic demo data.
 
 const GRAPH_VERSION = "v21.0";
 
@@ -32,7 +38,7 @@ export async function handler(event) {
   const headers = {
     "Content-Type": "application/json",
     "Access-Control-Allow-Origin": "*",
-    "Cache-Control": "public, max-age=300", // 5-min edge cache
+    "Cache-Control": "public, max-age=300",
   };
 
   const { q = "", type = "name", country = "ALL_EU" } = event.queryStringParameters || {};
@@ -42,98 +48,98 @@ export async function handler(event) {
   }
 
   const token = process.env.META_ACCESS_TOKEN;
+  const countries = country === "ALL_EU" ? EU_COUNTRIES : [country];
 
   // --- Demo mode (no token configured) ---
   if (!token) {
-    return {
-      statusCode: 200,
-      headers,
-      body: JSON.stringify({ demo: true, query: q, ads: demoAds(q) }),
-    };
+    if (type === "page_id") {
+      return json(headers, { demo: true, mode: "ads", query: q, ads: demoAds(q) });
+    }
+    return json(headers, { demo: true, mode: "advertisers", query: q, advertisers: demoAdvertisers(q) });
   }
 
-  // --- Live mode ---
-  const countries = country === "ALL_EU" ? EU_COUNTRIES : [country];
+  try {
+    if (type === "page_id") {
+      const ads = await fetchAdsForPage(token, q.trim(), countries);
+      return json(headers, { demo: false, mode: "ads", query: q, ads });
+    }
+    const advertisers = await discoverAdvertisers(token, q.trim(), countries);
+    return json(headers, { demo: false, mode: "advertisers", query: q, advertisers });
+  } catch (err) {
+    if (err.metaError) {
+      return json({ ...headers }, { error: `Meta API: ${err.metaError}` }, 502);
+    }
+    return json(headers, { error: `Failed to reach Meta API: ${err.message}` }, 500);
+  }
+}
 
-  const params = new URLSearchParams({
+function json(headers, obj, statusCode = 200) {
+  return { statusCode, headers, body: JSON.stringify(obj) };
+}
+
+// ---------- Advertiser discovery (name search) ----------
+async function discoverAdvertisers(token, query, countries) {
+  const params = baseParams(token, countries, "100");
+  params.set("search_terms", query);
+  params.set("fields", "page_id,page_name");
+
+  const data = await metaGet(params);
+
+  const byPage = new Map();
+  for (const ad of data.data || []) {
+    if (!ad.page_id) continue;
+    const entry = byPage.get(ad.page_id) || { pageId: ad.page_id, pageName: ad.page_name, count: 0 };
+    entry.count += 1;
+    byPage.set(ad.page_id, entry);
+  }
+
+  const norm = (s) => (s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  const nq = norm(query);
+
+  return [...byPage.values()]
+    .map((a) => {
+      const np = norm(a.pageName);
+      let score = a.count;
+      if (np === nq) score += 100000;        // exact name match wins
+      else if (np.startsWith(nq)) score += 50000;
+      else if (np.includes(nq)) score += 10000;
+      return { ...a, score };
+    })
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 24)
+    .map(({ score, ...a }) => a);
+}
+
+// ---------- Ads for a specific Page ----------
+async function fetchAdsForPage(token, pageId, countries) {
+  const params = baseParams(token, countries, "50");
+  params.set("search_page_ids", JSON.stringify([pageId]));
+  params.set("fields", AD_FIELDS);
+
+  const data = await metaGet(params);
+  return (data.data || []).map(normalizeAd);
+}
+
+function baseParams(token, countries, limit) {
+  return new URLSearchParams({
     access_token: token,
     ad_reached_countries: JSON.stringify(countries),
     ad_active_status: "ACTIVE",
     ad_type: "ALL",
-    fields: AD_FIELDS,
-    limit: "50",
+    limit,
   });
+}
 
-  if (type === "page_id") {
-    params.set("search_page_ids", JSON.stringify([q.trim()]));
-  } else {
-    params.set("search_terms", q.trim());
-  }
-
+async function metaGet(params) {
   const url = `https://graph.facebook.com/${GRAPH_VERSION}/ads_archive?${params.toString()}`;
-
-  try {
-    const res = await fetch(url);
-    const data = await res.json();
-
-    if (data.error) {
-      return {
-        statusCode: 502,
-        headers,
-        body: JSON.stringify({
-          error: `Meta API: ${data.error.message || "request failed"}`,
-        }),
-      };
-    }
-
-    const normalized = (data.data || []).map(normalizeAd);
-
-    // Fetch OG thumbnails from snapshot pages in parallel (best-effort, 3s timeout)
-    const ads = await enrichWithThumbnails(normalized);
-
-    return { statusCode: 200, headers, body: JSON.stringify({ demo: false, query: q, ads }) };
-  } catch (err) {
-    return {
-      statusCode: 500,
-      headers,
-      body: JSON.stringify({ error: `Failed to reach Meta API: ${err.message}` }),
-    };
+  const res = await fetch(url);
+  const data = await res.json();
+  if (data.error) {
+    const e = new Error(data.error.message || "request failed");
+    e.metaError = data.error.message || "request failed";
+    throw e;
   }
-}
-
-// Fetch the og:image from each ad's snapshot page in parallel.
-// Falls back gracefully to null if a fetch times out or fails.
-async function enrichWithThumbnails(ads) {
-  const thumbnails = await Promise.all(
-    ads.map((ad) => fetchOgImage(ad.snapshotUrl))
-  );
-  return ads.map((ad, i) => ({ ...ad, thumbnailUrl: thumbnails[i] }));
-}
-
-async function fetchOgImage(snapshotUrl) {
-  if (!snapshotUrl) return null;
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 3000);
-    const res = await fetch(snapshotUrl, {
-      signal: controller.signal,
-      headers: {
-        // Pose as a regular browser so Meta renders the full OG tags
-        "User-Agent":
-          "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
-        Accept: "text/html",
-      },
-    });
-    clearTimeout(timeout);
-    if (!res.ok) return null;
-    const html = await res.text();
-    // Extract og:image content attribute
-    const match = html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)
-      || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
-    return match ? match[1] : null;
-  } catch {
-    return null;
-  }
+  return data;
 }
 
 function normalizeAd(ad) {
@@ -149,7 +155,9 @@ function normalizeAd(ad) {
     stopTime: ad.ad_delivery_stop_time,
     platforms: ad.publisher_platforms || [],
     snapshotUrl: ad.ad_snapshot_url,
-    thumbnailUrl: null, // enriched by enrichWithThumbnails() after API call
+    // Public Ad Library page for this ad — works without a token in the browser.
+    viewUrl: `https://www.facebook.com/ads/library/?id=${ad.id}`,
+    thumbnailUrl: null,
   };
 }
 
@@ -158,9 +166,17 @@ function firstOf(arr) {
 }
 
 // ---------- Demo data ----------
+function demoAdvertisers(query) {
+  const brand = /^\d+$/.test(query) ? "Demo Brand" : capitalize(query);
+  return [
+    { pageId: "1001", pageName: brand, count: 42 },
+    { pageId: "1002", pageName: `${brand} Store`, count: 8 },
+    { pageId: "1003", pageName: `${brand} Official`, count: 5 },
+  ];
+}
+
 function demoAds(query) {
-  const name = query.length > 24 ? query.slice(0, 24) : query;
-  const brand = /^\d+$/.test(query) ? "Demo Advertiser" : capitalize(name);
+  const brand = /^\d+$/.test(query) ? "Demo Brand" : capitalize(query);
   const platforms = [
     ["facebook", "instagram"],
     ["instagram"],
@@ -179,7 +195,7 @@ function demoAds(query) {
   ];
   return copies.map((body, i) => ({
     id: `demo-${i}`,
-    pageId: "000000000000",
+    pageId: "1001",
     pageName: brand,
     body,
     title: null,
@@ -189,6 +205,7 @@ function demoAds(query) {
     stopTime: null,
     platforms: platforms[i],
     snapshotUrl: "https://www.facebook.com/ads/library/",
+    viewUrl: "https://www.facebook.com/ads/library/",
     thumbnailUrl: null,
   }));
 }

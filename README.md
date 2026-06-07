@@ -8,6 +8,20 @@ Powered by the official [Meta Ad Library API](https://www.facebook.com/ads/libra
 See [docs/ADR-001-data-source.md](docs/ADR-001-data-source.md) for the
 architecture decision and the API's coverage/field limitations.
 
+## Two known limits of the free official API
+
+1. **No images/video.** The Ad Library API never returns ad creative media — it
+   only exposes ad copy, destination URL, platforms, and dates. The creative
+   lives on Meta's JS-rendered snapshot page and can't be scraped server-side.
+   AdScraper therefore shows a rich text-forward card with a **"View ad ↗"**
+   link that opens the real creative on Meta. (True in-app visuals would require
+   a paid ad-intelligence API — Option C in the ADR.)
+2. **Name search ≠ official brand.** Searching a name uses Meta's fuzzy text
+   match, which surfaces *any* advertiser mentioning the term (resellers,
+   dropshippers). Big brands' official pages often don't appear by name. For an
+   exact brand, use **Search by Page ID** — find a page's ID on
+   facebook.com/ads/library and paste it in.
+
 ## Stack
 
 - **Frontend:** Vite + React (vanilla CSS, no UI framework)
